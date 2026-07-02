@@ -1,13 +1,18 @@
 name: Build ReSukiSU Kernel
+
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Installer les dépendances
         run: |
-          sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make python3
+          sudo apt update
+          sudo apt install -y repo git-core curl bc bison flex libssl-dev make python3
+
       - name: Synchroniser les sources GKI Google
         run: |
           mkdir kernel && cd kernel
@@ -15,10 +20,13 @@ jobs:
           git config --global user.email "gilian@example.com"
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
           repo sync -j$(nproc) -c --no-tags
-      - name: Injecter ReSukiSU
+
+      - name: Ajouter ReSukiSU en submodule
         run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          cd kernel/common
+          git submodule add https://github.com/ReSukiSU/ReSukiSU drivers/kernelsu
+          git submodule update --init --recursive
+
       - name: Injecter et Patcher SuSFS v2.0.0 (Simonpunk)
         run: |
           git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
@@ -33,11 +41,9 @@ jobs:
             fi
           fi
 
-          echo "Commit/tag v2.0.0 utilisé : $TARGET_COMMIT"
           git checkout $TARGET_COMMIT
 
-          cd ..
-          cd kernel
+          cd ../kernel
 
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
           cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
@@ -47,7 +53,7 @@ jobs:
           patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch || true
 
           if [ -f fs/namespace.c.rej ]; then
-            python3 - << 'PYEOF'
+            cat > /tmp/fix_namespace.py << 'EOF'
           import re
 
           path = "fs/namespace.c"
@@ -57,8 +63,9 @@ jobs:
           include_block = (
               "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
               "#include <linux/susfs_def.h>\n"
-              "#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+              "#endif\n"
           )
+
           content = content.replace(
               "#include <linux/mnt_idmapping.h>\n",
               "#include <linux/mnt_idmapping.h>\n" + include_block,
@@ -70,11 +77,10 @@ jobs:
               "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
               "extern bool susfs_is_current_ksu_domain(void);\n"
               "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\n"
-              "\n"
-              "#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\n"
-              "\n"
-              "#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+              "#define CL_COPY_MNT_NS BIT(25)\n"
+              "#endif\n"
           )
+
           content = content.replace(
               '#include "internal.h"\n',
               '#include "internal.h"\n' + extern_block,
@@ -83,20 +89,23 @@ jobs:
 
           with open(path, "w") as f:
               f.write(content)
-          PYEOF
-
+          EOF
+            python3 /tmp/fix_namespace.py
             rm -f fs/namespace.c.rej fs/namespace.c.orig
           fi
 
           cd ../..
+
       - name: Configurer le defconfig
         run: |
           sed -i '/CONFIG_LIBNVDIMM=y/a CONFIG_KSU_SUSFS=y' kernel/common/arch/arm64/configs/gki_defconfig
           sed -i 's/build-timestamp = .*/build-timestamp = "Wed Jan 30 12:00:00 UTC 2025"/' kernel/common/init/Makefile
+
       - name: Compiler le Kernel GKI
         run: |
           cd kernel
           tools/bazel run //common:kernel_aarch64_dist
+
       - name: Téléverser le Kernel (Artifact)
         uses: actions/upload-artifact@v4
         with:
