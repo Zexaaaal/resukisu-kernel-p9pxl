@@ -7,7 +7,7 @@ jobs:
     steps:
       - name: Installer les dépendances
         run: |
-          sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make
+          sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make python3
       - name: Synchroniser les sources GKI Google
         run: |
           mkdir kernel && cd kernel
@@ -47,20 +47,43 @@ jobs:
           patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch || true
 
           if [ -f fs/namespace.c.rej ]; then
-            sed -i '/#include <linux\/mnt_idmapping.h>/a\
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\
-#include <linux/susfs_def.h>\
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT' fs/namespace.c
+            python3 - << 'PYEOF'
+          import re
 
-            sed -i '/#include "internal.h"/a\
-\
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\
-extern bool susfs_is_current_ksu_domain(void);\
-extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\
-\
-#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\
-\
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT' fs/namespace.c
+          path = "fs/namespace.c"
+          with open(path, "r") as f:
+              content = f.read()
+
+          include_block = (
+              "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+              "#include <linux/susfs_def.h>\n"
+              "#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+          )
+          content = content.replace(
+              "#include <linux/mnt_idmapping.h>\n",
+              "#include <linux/mnt_idmapping.h>\n" + include_block,
+              1
+          )
+
+          extern_block = (
+              "\n"
+              "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+              "extern bool susfs_is_current_ksu_domain(void);\n"
+              "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\n"
+              "\n"
+              "#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\n"
+              "\n"
+              "#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+          )
+          content = content.replace(
+              '#include "internal.h"\n',
+              '#include "internal.h"\n' + extern_block,
+              1
+          )
+
+          with open(path, "w") as f:
+              f.write(content)
+          PYEOF
 
             rm -f fs/namespace.c.rej fs/namespace.c.orig
           fi
