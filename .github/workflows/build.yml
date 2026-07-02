@@ -26,15 +26,22 @@ jobs:
 
       - name: Injecter et Patcher SuSFS v2.0.0 (Simonpunk)
         run: |
-          # 1. On clone proprement la branche de ton kernel (6.1)
-          git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
+          # 1. On clone la branche avec l'historique complet
+          git clone --no-tags -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
           cd susfs4ksu
           
-          # 2. On force Git à reculer jusqu'au commit exact de la v2.0.0
-          # (Ce hash correspond précisément à la version 2.0.0 pour le kernel 6.1)
-          git checkout d50117dcf4fdf243883a45371b26671e2c94ee94
+          # 2. Script magique pour trouver le dernier commit où la version était 2.0.0
+          # On cherche dans les messages de commit ou le contenu
+          TARGET_COMMIT=$(git log --all --grep="2.0.0" -n 1 --format="%H")
+          if [ -z "$TARGET_COMMIT" ]; then
+            # Si pas trouvé par le message, on cherche le commit qui a écrit "2.0.0" dans le fichier VERSION
+            TARGET_COMMIT=$(git log -S "2.0.0" --format="%H" -n 1)
+          fi
           
-          # 3. On revient à la racine pour appliquer les patchs normalement
+          echo "Commit v2.0.0 trouvé : $TARGET_COMMIT"
+          git checkout $TARGET_COMMIT
+          
+          # 3. On applique les patchs à la racine du kernel
           cd ..
           cd kernel
           cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU/
