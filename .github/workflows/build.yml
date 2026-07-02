@@ -36,13 +36,22 @@ jobs:
           cd ..
           cd kernel
 
-          # On NE touche PAS à ./KernelSU/ : ReSukiSU a déjà son support SUSFS natif intégré
-          # On patch uniquement le noyau Linux (common/), qui reste vanilla AOSP
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
           cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-          cd common && patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch
+          cd common
+          # On ne bloque pas immédiatement sur un échec de patch
+          patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch || true
+
+          # Affiche le détail du hunk qui a échoué pour diagnostic
+          if [ -f fs/namespace.c.rej ]; then
+            echo "===== CONTENU DU REJET : fs/namespace.c.rej ====="
+            cat fs/namespace.c.rej
+            echo "===== CONTEXTE ACTUEL AUTOUR DE LA LIGNE 32 ====="
+            sed -n '1,45p' fs/namespace.c
+            exit 1
+          fi
       - name: Configurer le defconfig
         run: |
           echo "CONFIG_KSU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
