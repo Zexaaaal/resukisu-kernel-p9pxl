@@ -16,17 +16,11 @@ jobs:
           # On laisse la branche gérer le manifeste par défaut, ce qui évite l'erreur XML
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
           repo sync -j$(nproc) -c --no-tags
-      - name: Injecter ReSukiSU
-        run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
       - name: Injecter et Patcher SuSFS v2.0.0 (Simonpunk)
         run: |
-          # 1. On clone la branche avec l'historique complet (tags inclus cette fois)
           git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
           cd susfs4ksu
 
-          # 2. On essaie d'abord un tag propre v2.0.0, sinon on retombe sur la recherche par commit
           if git rev-parse "refs/tags/v2.0.0" >/dev/null 2>&1; then
             TARGET_COMMIT="v2.0.0"
           else
@@ -39,16 +33,16 @@ jobs:
           echo "Commit/tag v2.0.0 utilisé : $TARGET_COMMIT"
           git checkout $TARGET_COMMIT
 
-          # 3. On applique les patchs à la racine du kernel
           cd ..
           cd kernel
-          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU/
+
+          # On NE touche PAS à ./KernelSU/ : ReSukiSU a déjà son support SUSFS natif intégré
+          # On patch uniquement le noyau Linux (common/), qui reste vanilla AOSP
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
           cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch
-          cd ../common && patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch
+          cd common && patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch
       - name: Configurer le defconfig
         run: |
           echo "CONFIG_KSU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
