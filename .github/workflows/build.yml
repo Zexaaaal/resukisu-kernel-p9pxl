@@ -10,13 +10,13 @@ jobs:
         run: |
           sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make
 
-      - name: Synchroniser les sources GKI Google (Mai 2026)
+      - name: Synchroniser les sources GKI Google
         run: |
           mkdir kernel && cd kernel
           git config --global user.name "Gilian"
           git config --global user.email "gilian@example.com"
-          # On cible précisément le manifeste de la révision de mai 2026
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 -m android14-6.1-2026-05.xml --depth=1
+          # On laisse la branche gérer le manifeste par défaut, ce qui évite l'erreur XML
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
           repo sync -j$(nproc) -c --no-tags
 
       - name: Injecter ReSukiSU
