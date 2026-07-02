@@ -1,0 +1,54 @@
+name: Build ReSukiSU Kernel
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer les dépendances
+        run: |
+          sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make
+
+      - name: Synchroniser les sources GKI Google
+        run: |
+          mkdir kernel && cd kernel
+          git config --global user.name "Gilian"
+          git config --global user.email "gilian@example.com"
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
+          repo sync -j$(nproc) -c --no-tags
+
+      - name: Injecter ReSukiSU
+        run: |
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+
+      - name: Injecter et Patcher SuSFS v2.2.0 (Simonpunk)
+        run: |
+          git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
+          cd kernel
+          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU/
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-6.1.patch ./common/
+          cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          
+          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch
+          cd ../common && patch -p1 < 50_add_susfs_in_kernel-6.1.patch
+
+      - name: Configurer le defconfig
+        run: |
+          echo "CONFIG_KSU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_RESUKISU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          sed -i 's/build-timestamp = .*/build-timestamp = "Wed Jan 30 12:00:00 UTC 2025"/' kernel/common/init/Makefile
+
+      - name: Compiler le Kernel GKI
+        run: |
+          cd kernel
+          tools/bazel run //common:kernel_aarch64_dist
+
+      - name: Téléverser le Kernel (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReSukiSU-Kernel-Image
+          path: kernel/out/kernel_aarch64/dist/Image
