@@ -10,12 +10,13 @@ jobs:
         run: |
           sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make
 
-      - name: Synchroniser les sources GKI Google
+      - name: Synchroniser les sources GKI Google (Mai 2026)
         run: |
           mkdir kernel && cd kernel
           git config --global user.name "Gilian"
           git config --global user.email "gilian@example.com"
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
+          # On cible précisément le manifeste de la révision de mai 2026
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 -m android14-6.1-2026-05.xml --depth=1
           repo sync -j$(nproc) -c --no-tags
 
       - name: Injecter ReSukiSU
@@ -23,9 +24,11 @@ jobs:
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
 
-      - name: Injecter et Patcher SuSFS v2.2.0 (Simonpunk)
+      - name: Injecter et Patcher SuSFS v2.0.0 (Simonpunk)
         run: |
-          git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
+          # On cible spécifiquement la branche 6.1 et le tag v2.0.0 simultanément
+          git clone --depth 1 -b gki-android14-6.1 --branch v2.0.0 https://gitlab.com/simonpunk/susfs4ksu.git
+          
           cd kernel
           cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU/
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-6.1.patch ./common/
