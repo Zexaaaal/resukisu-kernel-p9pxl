@@ -1,7 +1,6 @@
 name: Build ReSukiSU Kernel
 on:
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,7 +8,6 @@ jobs:
       - name: Installer les dépendances
         run: |
           sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make
-
       - name: Synchroniser les sources GKI Google
         run: |
           mkdir kernel && cd kernel
@@ -18,52 +16,49 @@ jobs:
           # On laisse la branche gérer le manifeste par défaut, ce qui évite l'erreur XML
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
           repo sync -j$(nproc) -c --no-tags
-
       - name: Injecter ReSukiSU
         run: |
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-
       - name: Injecter et Patcher SuSFS v2.0.0 (Simonpunk)
         run: |
-          # 1. On clone la branche avec l'historique complet
-          git clone --no-tags -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
+          # 1. On clone la branche avec l'historique complet (tags inclus cette fois)
+          git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
           cd susfs4ksu
-          
-          # 2. Script magique pour trouver le dernier commit où la version était 2.0.0
-          # On cherche dans les messages de commit ou le contenu
-          TARGET_COMMIT=$(git log --all --grep="2.0.0" -n 1 --format="%H")
-          if [ -z "$TARGET_COMMIT" ]; then
-            # Si pas trouvé par le message, on cherche le commit qui a écrit "2.0.0" dans le fichier VERSION
-            TARGET_COMMIT=$(git log -S "2.0.0" --format="%H" -n 1)
+
+          # 2. On essaie d'abord un tag propre v2.0.0, sinon on retombe sur la recherche par commit
+          if git rev-parse "refs/tags/v2.0.0" >/dev/null 2>&1; then
+            TARGET_COMMIT="v2.0.0"
+          else
+            TARGET_COMMIT=$(git log --all --grep="2.0.0" -n 1 --format="%H")
+            if [ -z "$TARGET_COMMIT" ]; then
+              TARGET_COMMIT=$(git log -S "2.0.0" --format="%H" -n 1)
+            fi
           fi
-          
-          echo "Commit v2.0.0 trouvé : $TARGET_COMMIT"
+
+          echo "Commit/tag v2.0.0 utilisé : $TARGET_COMMIT"
           git checkout $TARGET_COMMIT
-          
+
           # 3. On applique les patchs à la racine du kernel
           cd ..
           cd kernel
           cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU/
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-6.1.patch ./common/
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
           cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-          
-          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch
-          cd ../common && patch -p1 < 50_add_susfs_in_kernel-6.1.patch
 
+          cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch
+          cd ../common && patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch
       - name: Configurer le defconfig
         run: |
           echo "CONFIG_KSU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_RESUKISU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> kernel/common/arch/arm64/configs/gki_defconfig
           sed -i 's/build-timestamp = .*/build-timestamp = "Wed Jan 30 12:00:00 UTC 2025"/' kernel/common/init/Makefile
-
       - name: Compiler le Kernel GKI
         run: |
           cd kernel
           tools/bazel run //common:kernel_aarch64_dist
-
       - name: Téléverser le Kernel (Artifact)
         uses: actions/upload-artifact@v4
         with:
