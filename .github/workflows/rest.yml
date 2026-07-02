@@ -1,0 +1,83 @@
+name: Build ReSukiSU Kernel
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer les dépendances
+        run: |
+          sudo apt update && sudo apt install -y repo git-core curl bc bison flex libssl-dev make
+      - name: Synchroniser les sources GKI Google
+        run: |
+          mkdir kernel && cd kernel
+          git config --global user.name "Gilian"
+          git config --global user.email "gilian@example.com"
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
+          repo sync -j$(nproc) -c --no-tags
+      - name: Injecter ReSukiSU
+        run: |
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+      - name: Injecter et Patcher SuSFS v2.0.0 (Simonpunk)
+        run: |
+          git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git
+          cd susfs4ksu
+
+          if git rev-parse "refs/tags/v2.0.0" >/dev/null 2>&1; then
+            TARGET_COMMIT="v2.0.0"
+          else
+            TARGET_COMMIT=$(git log --all --grep="2.0.0" -n 1 --format="%H")
+            if [ -z "$TARGET_COMMIT" ]; then
+              TARGET_COMMIT=$(git log -S "2.0.0" --format="%H" -n 1)
+            fi
+          fi
+
+          echo "Commit/tag v2.0.0 utilisé : $TARGET_COMMIT"
+          git checkout $TARGET_COMMIT
+
+          cd ..
+          cd kernel
+
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
+          cp -r ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp -r ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+
+          cd common
+          patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch || true
+
+          if [ -f fs/namespace.c.rej ]; then
+            sed -i '/#include <linux\/mnt_idmapping.h>/a\
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\
+#include <linux/susfs_def.h>\
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT' fs/namespace.c
+
+            sed -i '/#include "internal.h"/a\
+\
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\
+extern bool susfs_is_current_ksu_domain(void);\
+extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\
+\
+#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\
+\
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT' fs/namespace.c
+
+            rm -f fs/namespace.c.rej fs/namespace.c.orig
+          fi
+
+          cd ../..
+      - name: Configurer le defconfig
+        run: |
+          echo "CONFIG_KSU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_RESUKISU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_SUSFS=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          sed -i 's/build-timestamp = .*/build-timestamp = "Wed Jan 30 12:00:00 UTC 2025"/' kernel/common/init/Makefile
+      - name: Compiler le Kernel GKI
+        run: |
+          cd kernel
+          tools/bazel run //common:kernel_aarch64_dist
+      - name: Téléverser le Kernel (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReSukiSU-Kernel-Image
+          path: kernel/out/kernel_aarch64/dist/Image
