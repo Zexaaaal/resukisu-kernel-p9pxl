@@ -92,7 +92,7 @@ jobs:
       - name: Configurer le defconfig
         run: |
           echo "CONFIG_KSU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_RESUKISU=y" >> kernel/common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> kernel/common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> kernel/common/arch/arm64/configs/gki_defconfig
           sed -i 's/build-timestamp = .*/build-timestamp = "Wed Jan 30 12:00:00 UTC 2025"/' kernel/common/init/Makefile
       - name: Compiler le Kernel GKI
